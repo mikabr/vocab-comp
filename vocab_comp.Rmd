@@ -1,0 +1,165 @@
+---
+title: "Cross-Linguistic Comparison of Developmental Trajectories in Vocabulary Composition"
+author: "Mika Braginsky, Daniel Yurovsky, Virginia Marchman, and Michael Frank"
+date: "2015-04-29"
+output:
+  html_document:
+    highlight: tango
+    theme: spacelab
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(cache=TRUE, message=FALSE, warning=FALSE)
+font = "Open Sans"
+```
+
+Load required libraries.
+```{r libraries, cache=FALSE}
+library(ggplot2)
+library(grid)
+library(dplyr)
+library(tidyr)
+source('data_loading.R')
+```
+
+Load in Wordbank common data.
+```{r database}
+wordbank <- connect.to.wordbank("prod")
+
+common.tables <- get.common.tables(wordbank)
+
+items <- get.item.data(common.tables$wordmapping,
+                       common.tables$instrumentsmap,
+                       common.tables$category) %>%
+  filter(form == "WS", type == "word")
+
+instrument.tables <- get.instrument.tables(wordbank, common.tables$instruments)
+languages <- unique(instrument.tables$language)
+```
+
+Get vocabulary composition data for all languages.
+```{r vocab_summary}
+get.vocab.composition <- function(lang) {
+  
+  lang.vocab.items <- filter(items, language == lang) %>%
+    filter(lexical_category != "other") %>%
+    rename(column = item.id) %>%
+    mutate(item.id = as.numeric(substr(column, 6, nchar(column))))
+  
+  lang.instrument.table <- filter(instrument.tables, language == lang,
+                                  form == "WS")$table[[1]]
+  
+  lang.vocab.data <- get.instrument.data(lang.instrument.table,
+                                         lang.vocab.items$column) %>%
+    left_join(select(lang.vocab.items, item.id, lexical_category, item, definition)) %>%
+    mutate(value = ifelse(is.na(value), "", value),
+           value = value == "produces")
+  
+  num.words <- nrow(lang.vocab.items)
+  
+  lang.vocab.summary <- lang.vocab.data %>%
+    group_by(data_id, lexical_category) %>%
+    summarise(sum = sum(value),
+              diff = length(value) - sum,
+              mean = sum / length(value))
+  
+  lang.vocab.sizes <- lang.vocab.summary %>%
+    summarise(vocab.mean = sum(sum) / num.words)
+  
+  left_join(lang.vocab.summary, lang.vocab.sizes) %>%
+    mutate(language = lang)
+  
+  }
+
+vocab.composition <- bind_rows(sapply(languages, get.vocab.composition,
+                                      simplify = FALSE)) %>%
+  filter(lexical_category != "unknown",
+         lexical_category != "other") %>%
+  mutate(lexical_category = factor(lexical_category,
+                                   levels=c("nouns", "predicates", "function_words"),
+                                   labels=c("Nouns", "Predicates", "Function Words")))
+```
+
+Plot vocabulary composition as a function of vocabulary size for each language with loess curves.
+```{r vocab_data_language, fig.width=10, fig.height=8}
+ggplot(vocab.composition,
+       aes(x = vocab.mean, y = mean, colour = lexical_category)) +
+  geom_smooth(size = 0.65, method = "loess") +
+  facet_wrap(~ language) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
+                     name = "Proportion of Category\n") +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
+                     name = "\nVocabulary Size") +
+  geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
+  theme_bw(base_size = 12) + 
+  theme(legend.position = c(0.068, 0.95),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 9, lineheight = unit(0.8, "char")),
+        legend.key.height = unit(0.8, "char"),
+        legend.key.width = unit(0.3, "cm"),
+        legend.key = element_blank(),
+        legend.background = element_rect(fill = "transparent"),
+        text = element_text(family = font)) +
+  scale_color_brewer(palette = "Set1", name = "Lexical Category")
+```
+
+For each language and lexical category, find the point in vocabulary size at which the proportion predicted by the loess model is farthest from the diagonal, as well the value of that distance and an estimate of the total area under the curve.
+```{r dists}
+get_predictions <- function(model, pts) {
+  predictions <- predict(model, data.frame(vocab.mean=pts))
+  predictions[1] <- 0.0
+  predictions[length(predictions)] <- 1.0
+  return(predictions)
+  }
+
+get_max_pos <- function(predictions, pts) {
+  dists <- predictions - pts
+  far.point <- which.max(abs(dists))
+  far.point.pos <- pts[far.point]
+  return(far.point.pos)
+  }
+
+get_max_val <- function(predictions, pts) {
+  dists <- predictions - pts
+  far.point <- which.max(abs(dists))
+  far.point.val <- predictions[far.point]
+  return(far.point.val)
+  }
+
+get_area <- function(predictions, pts, width) {
+  dists <- predictions - pts
+  first_dists <- dists[1:length(dists)-1]
+  second_dists <- dists[2:length(dists)]
+  mid_dists <- (first_dists + second_dists) / 2
+  area <- sum(mid_dists * width)
+  return(area)
+  }
+
+model <- loess(mean ~ vocab.mean, data = filter(vocab.composition, language == "English",
+                                                lexical_category == "Nouns"),
+               control = loess.control(surface="direct"))
+
+width <- 0.01
+pts <- seq(0, 1, width)
+dists <- vocab.composition %>%
+  group_by(language, lexical_category) %>%
+  do(predictions = get_predictions(loess(mean ~ vocab.mean, data = .,
+                                         control = loess.control(surface="direct")),
+                                   pts)) %>%
+  mutate(dist_pos = get_max_pos(predictions, pts),
+         dist_val = get_max_val(predictions, pts),
+         area = get_area(predictions, pts, width))
+```
+
+Plot each language and lexical category's point of maximum distance against estimate of area.
+```{r dists_plot, fig.width=8, fig.height=6}
+ggplot(dists, aes(x = dist_pos, y = area, color = lexical_category)) +
+  geom_text(aes(label = language), size = 3) +
+  geom_hline(aes(y = 0), color = "gray", linetype = "dashed") +
+  scale_colour_brewer(palette = "Set1", name = "") +
+  theme_bw() +
+  theme(text = element_text(family = font)) +
+  scale_x_continuous(name = "\nPosition of maximum distance", limits = c(0,1.05)) +
+  scale_y_continuous(name = "Estimate of area\n")
+```
