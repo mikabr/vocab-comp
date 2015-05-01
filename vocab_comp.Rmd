@@ -1,7 +1,7 @@
 ---
 title: "Cross-Linguistic Comparison of Developmental Trajectories in Vocabulary Composition"
 author: "Mika Braginsky, Daniel Yurovsky, Virginia Marchman, and Michael Frank"
-date: "2015-04-29"
+date: "2015-04-30"
 output:
   html_document:
     highlight: tango
@@ -20,6 +20,9 @@ library(ggplot2)
 library(grid)
 library(dplyr)
 library(tidyr)
+library(magrittr)
+library(quadprog)
+library(bootstrap)
 source('data_loading.R')
 ```
 
@@ -39,7 +42,7 @@ languages <- unique(instrument.tables$language)
 ```
 
 Get vocabulary composition data for all languages.
-```{r vocab_summary}
+```{r vocab_composition}
 get.vocab.composition <- function(lang) {
   
   lang.vocab.items <- filter(items, language == lang) %>%
@@ -81,11 +84,10 @@ vocab.composition <- bind_rows(sapply(languages, get.vocab.composition,
                                    labels=c("Nouns", "Predicates", "Function Words")))
 ```
 
-Plot vocabulary composition as a function of vocabulary size for each language with loess curves.
-```{r vocab_data_language, fig.width=10, fig.height=8}
-ggplot(vocab.composition,
-       aes(x = vocab.mean, y = mean, colour = lexical_category)) +
-  geom_smooth(size = 0.65, method = "loess") +
+Base plot for looking at vocabulary composition.
+```{r base_plot}
+base_plot <- ggplot(vocab.composition,
+                    aes(x = vocab.mean, y = mean, colour = lexical_category)) +
   facet_wrap(~ language) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                      name = "Proportion of Category\n") +
@@ -104,62 +106,92 @@ ggplot(vocab.composition,
   scale_color_brewer(palette = "Set1", name = "Lexical Category")
 ```
 
-For each language and lexical category, find the point in vocabulary size at which the proportion predicted by the loess model is farthest from the diagonal, as well the value of that distance and an estimate of the total area under the curve.
-```{r dists}
-get_predictions <- function(model, pts) {
-  predictions <- predict(model, data.frame(vocab.mean=pts))
-  predictions[1] <- 0.0
-  predictions[length(predictions)] <- 1.0
-  return(predictions)
+Plot vocabulary composition as a function of vocabulary size for each language.
+```{r plot_points, fig.width=10, fig.height=10}
+base_plot + geom_jitter(size = 0.7)
+```
+
+Make an S3 class for a clm (constrained linear model), which uses quadratic programming to run a regression on data with a specified formula, subject to the constraint that the coefficients of the regression sum to 1 (in the future could support arbitrary constraints on the coefficients).
+```{r}
+clm <- function(formula, data, ...) {
+  M <- model.frame(formula, data)
+  y <- M[,1]
+  X <- as.matrix(M[,-1])
+  s <- solve.QP(t(X) %*% X, t(y) %*% X, matrix(1, nr=ncol(X), nc=1), 1, meq=1)
+  class(s) <- "clm"
+  s$formula <- formula
+  return(s)
   }
 
-get_max_pos <- function(predictions, pts) {
-  dists <- predictions - pts
-  far.point <- which.max(abs(dists))
-  far.point.pos <- pts[far.point]
-  return(far.point.pos)
+# S3 predict method for clm
+predict.clm <- function(object, newdata) {
+  M <- as.matrix(model.frame(object$formula[-2], newdata))
+  s <- object$solution
+  p <- (M %*% s)
+  rownames(p) <- NULL
+  p[,1]
   }
 
-get_max_val <- function(predictions, pts) {
-  dists <- predictions - pts
-  far.point <- which.max(abs(dists))
-  far.point.val <- predictions[far.point]
-  return(far.point.val)
+# S3 predictdf method for clm (called by stat_smooth)
+predictdf.clm <- function(model, xseq, se, level) {
+  pred <- predict(model, newdata = data.frame(x = xseq))
+  data.frame(x = xseq, y = as.vector(pred))
   }
+```
+
+Plot vocabulary composition as a function of vocabulary size for each language with cubic contrained lm curves.
+```{r plot_models, fig.width=10, fig.height=10}
+base_plot + geom_smooth(method = "clm", formula = y ~ I(x^3) + I(x^2) + x - 1)
+```
+
+For each language and lexical category, estimate the area between the proportion curve predicted by the model and the diagonal.
+```{r}
+width <- 0.001 # can get CI arbitrarily small by lowering this???
+pts <- seq(0, 1, width)
 
 get_area <- function(predictions, pts, width) {
   dists <- predictions - pts
   first_dists <- dists[1:length(dists)-1]
   second_dists <- dists[2:length(dists)]
   mid_dists <- (first_dists + second_dists) / 2
-  area <- sum(mid_dists * width)
-  return(area)
+  sum(mid_dists * width)
   }
 
-model <- loess(mean ~ vocab.mean, data = filter(vocab.composition, language == "English",
-                                                lexical_category == "Nouns"),
-               control = loess.control(surface="direct"))
+get_area_samples <- function(data_grp) {
+  model <- clm(mean ~ I(vocab.mean^3) + I(vocab.mean^2) + vocab.mean - 1, data = data_grp)
+  predictions <- predict(model, data.frame(vocab.mean = pts))
+  samples <- bootstrap(predictions, 1000, function(x) get_area(x, pts, width))
+  samples$thetastar
+  }
 
-width <- 0.01
-pts <- seq(0, 1, width)
-dists <- vocab.composition %>%
+clm.dists <- vocab.composition %>%
   group_by(language, lexical_category) %>%
-  do(predictions = get_predictions(loess(mean ~ vocab.mean, data = .,
-                                         control = loess.control(surface="direct")),
-                                   pts)) %>%
-  mutate(dist_pos = get_max_pos(predictions, pts),
-         dist_val = get_max_val(predictions, pts),
-         area = get_area(predictions, pts, width))
+  #   do(samples = bootstrap(predict(clm(mean ~ I(vocab.mean^3) + I(vocab.mean^2) + vocab.mean - 1,
+  #                                           data = .),
+  #                                       data.frame(vocab.mean = pts)),
+  #                               1000, function(x) get_area(x, pts, width))$thetastar) %>%
+  do(samples = get_area_samples(.)) %>%
+  mutate(mean = mean(samples),
+         cil = quantile(samples, 0.025),
+         cih = quantile(samples, 0.975))
+
+nouns <- filter(clm.dists, lexical_category == "Nouns")
+noun.levels <- nouns$language[order(nouns$mean, nouns$language, decreasing = FALSE)]
+clm.dists %<>% mutate(language = factor(language, levels = noun.levels))
 ```
 
-Plot each language and lexical category's point of maximum distance against estimate of area.
-```{r dists_plot, fig.width=8, fig.height=6}
-ggplot(dists, aes(x = dist_pos, y = area, color = lexical_category)) +
-  geom_text(aes(label = language), size = 3) +
+Plot each language's area estimate by lexical category.
+```{r dists_plot, fig.width=8, fig.height=8}
+ggplot(clm.dists, aes(y = language, x = mean, col = lexical_category)) +
+  facet_grid(lexical_category ~ .) +
+  geom_point() +
+  geom_segment(aes(x = cil, xend = cih,
+                   y = language, yend = language)) +
   geom_hline(aes(y = 0), color = "gray", linetype = "dashed") +
-  scale_colour_brewer(palette = "Set1", name = "") +
+  scale_colour_brewer(palette = "Set1", name = "", guide=FALSE) +
   theme_bw() +
-  theme(text = element_text(family = font)) +
-  scale_x_continuous(name = "\nPosition of maximum distance", limits = c(0,1.05)) +
-  scale_y_continuous(name = "Estimate of area\n")
+  theme(text = element_text(family = font)) + 
+  geom_vline(xintercept=0, lty=2) + 
+  ylab("") +
+  xlab("\nRelative representation in early vocabulary") 
 ```
