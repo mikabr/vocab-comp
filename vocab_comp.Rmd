@@ -1,7 +1,7 @@
 ---
 title: "Cross-Linguistic Comparison of Developmental Trajectories in Vocabulary Composition"
 author: "Mika Braginsky, Daniel Yurovsky, Virginia Marchman, and Michael Frank"
-date: "2015-04-30"
+date: "2015-05-01"
 output:
   html_document:
     highlight: tango
@@ -22,7 +22,6 @@ library(dplyr)
 library(tidyr)
 library(magrittr)
 library(quadprog)
-library(bootstrap)
 source('data_loading.R')
 ```
 
@@ -101,8 +100,8 @@ base_plot <- ggplot(vocab.composition,
         legend.key.height = unit(0.8, "char"),
         legend.key.width = unit(0.3, "cm"),
         legend.key = element_blank(),
-        legend.background = element_rect(fill = "transparent"))+
-      #  text = element_text(family = font)) +
+        legend.background = element_rect(fill = "transparent"),
+        text = element_text(family = font)) +
   scale_color_brewer(palette = "Set1", name = "Lexical Category")
 ```
 
@@ -144,95 +143,54 @@ Plot vocabulary composition as a function of vocabulary size for each language w
 base_plot + geom_smooth(method = "clm", formula = y ~ I(x^3) + I(x^2) + x - 1)
 ```
 
-Resample kids 
-```{r}
-sample.areas <- function(d,num.times=1000) {
+Function for resampling data.
+```{r resample}
+sample.areas <- function(d, num.times=1000) {
   
   poly.area <- function(group.data) {
     model = clm(mean ~ I(vocab.mean^3) + I(vocab.mean^2) + vocab.mean - 1, 
                      data = group.data)
-    return((model$solution %*% c(1/4,1/3,1/2) - .5)[1])
+    return((model$solution %*% c(1/4,1/3,1/2) - 0.5)[1])
   }
   
   counter = 1
   sample.area <- function(d) {
     d.frame <- d %>%
       group_by(language) %>%
-      sample_frac(replace = TRUE) %>% #resample kids
-      group_by(language,lexical_category) %>%
+      sample_frac(replace = TRUE) %>% # resample kids
+      group_by(language, lexical_category) %>%
       do(area = poly.area(.)) %>%
       mutate(area = area[1]) %>%
-      rename_(.dots = setNames("area",counter))
+      rename_(.dots = setNames("area", counter))
 
-    counter <<- counter + 1 #Increment counter outside scope
+    counter <<- counter + 1 # increment counter outside scope
     return(d.frame)
   }
 
-  areas <- replicate(num.times, sample.area(d),simplify=FALSE)
+  areas <- replicate(num.times, sample.area(d), simplify=FALSE)
   
-  Reduce(left_join,areas) %>%
-    gather(sample,area,-language, -lexical_category)
+  Reduce(left_join, areas) %>%
+    gather(sample, area, -language, -lexical_category)
 }
 ```
 
-```{r}
-
-areas <- sample.areas(vocab.composition,1000)
+Resample data, compute area for each sample, find the mean and CI of the area estimate.
+```{r areas}
+areas <- sample.areas(vocab.composition, 1000)
 
 area.summary <- areas %>%
   group_by(language, lexical_category) %>%
   summarise(mean =  mean(area),
-            ci.high = quantile(area,.975),
-            ci.low = quantile(area,.025))
+            ci.high = quantile(area, 0.975),
+            ci.low = quantile(area, 0.025))
 
 nouns <- filter(area.summary, lexical_category == "Nouns")
 noun.levels <- nouns$language[order(nouns$mean, nouns$language, decreasing = FALSE)]
-area.summary %<>% ungroup() %>%mutate(language = factor(language, levels = noun.levels))
-```
-
-For each language and lexical category, estimate the area between the proportion curve predicted by the model and the diagonal.
-```{r}
-
-clm.dists <- vocab.composition %>%
-  group_by(language, lexical_category)
-
-width <- 0.001 # can get CI arbitrarily small by lowering this???
-pts <- seq(0, 1, width)
-
-get_area <- function(predictions, pts, width) {
-  dists <- predictions - pts
-  first_dists <- dists[1:length(dists)-1]
-  second_dists <- dists[2:length(dists)]
-  mid_dists <- (first_dists + second_dists) / 2
-  sum(mid_dists * width)
-  }
-
-get_area_samples <- function(data_grp) {
-  model <- clm(mean ~ I(vocab.mean^3) + I(vocab.mean^2) + vocab.mean - 1, data = data_grp)
-  predictions <- predict(model, data.frame(vocab.mean = pts))
-  samples <- bootstrap(predictions, 1000, function(x) get_area(x, pts, width))
-  samples$thetastar
-  }
-
-clm.dists <- vocab.composition %>%
-  group_by(language, lexical_category) %>%
-  #   do(samples = bootstrap(predict(clm(mean ~ I(vocab.mean^3) + I(vocab.mean^2) + vocab.mean - 1,
-  #                                           data = .),
-  #                                       data.frame(vocab.mean = pts)),
-  #                               1000, function(x) get_area(x, pts, width))$thetastar) %>%
-  do(samples = get_area_samples(.)) %>%
-  mutate(mean = mean(samples),
-         cil = quantile(samples, 0.025),
-         cih = quantile(samples, 0.975))
-
-nouns <- filter(clm.dists, lexical_category == "Nouns")
-noun.levels <- nouns$language[order(nouns$mean, nouns$language, decreasing = FALSE)]
-clm.dists %<>% mutate(language = factor(language, levels = noun.levels))
+area.summary %<>% ungroup() %>% mutate(language = factor(language, levels = noun.levels))
 ```
 
 Plot each language's area estimate by lexical category.
-```{r dists_plot, fig.width=8, fig.height=8}
-
+```{r plot_areas, fig.width=8, fig.height=8}
 ggplot(area.summary, aes(y = language, x = mean, col = lexical_category)) +
   facet_grid(lexical_category ~ .) +
   geom_point() +
@@ -241,7 +199,7 @@ ggplot(area.summary, aes(y = language, x = mean, col = lexical_category)) +
   geom_hline(aes(y = 0), color = "gray", linetype = "dashed") +
   scale_colour_brewer(palette = "Set1", name = "", guide=FALSE) +
   theme_bw() +
- # theme(text = element_text(family = font)) + 
+  theme(text = element_text(family = font)) + 
   geom_vline(xintercept=0, lty=2) + 
   ylab("") +
   xlab("\nRelative representation in early vocabulary") 
