@@ -1,7 +1,7 @@
 ---
 title: "Cross-Linguistic Comparison of Developmental Trajectories in Vocabulary Composition"
 author: "Mika Braginsky, Daniel Yurovsky, Virginia Marchman, and Michael Frank"
-date: "2015-05-05"
+date: "2015-05-06"
 output:
   html_document:
     highlight: tango
@@ -122,11 +122,12 @@ base_plot <- function(input_form, input_measure) {
          aes(x = vocab, y = prop, colour = lexical_category)) +
   facet_wrap(~ language) +
   geom_jitter(size = 0.7) +
+  geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                      name = "Proportion of Category\n") +
   scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                      name = "\nVocabulary Size") +
-  geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
+  scale_color_brewer(palette = "Set1", name = "Lexical Category") +
   theme_bw(base_size = 12) + 
   theme(legend.position = c(0.068, 0.95),
         legend.text = element_text(size = 9),
@@ -135,8 +136,7 @@ base_plot <- function(input_form, input_measure) {
         legend.key.width = unit(0.3, "cm"),
         legend.key = element_blank(),
         legend.background = element_rect(fill = "transparent"),
-        text = element_text(family = font)) +
-  scale_color_brewer(palette = "Set1", name = "Lexical Category")
+        text = element_text(family = font))
 }
 ```
 
@@ -249,19 +249,18 @@ area.summary <- areas %>%
 #area.summary %<>% ungroup() %>% mutate(language = factor(language, levels = noun.levels))
 ```
 
-Plot each language's area estimate by lexical category.
+Plot each lexical category's area estimate by language, form, and measure.
 ```{r plot_areas, fig.width=12, fig.height=8}
 ggplot(area.summary, aes(y = language, x = mean, col = lexical_category)) +
   facet_grid(lexical_category ~ form + measure) +
   geom_point() +
   geom_segment(aes(x = ci.low, xend = ci.high,
                    y = language, yend = language)) +
-  geom_hline(aes(y = 0), color = "gray", linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") + 
   scale_colour_brewer(palette = "Set1", name = "", guide=FALSE) +
   scale_y_discrete(limits = rev(levels(area.summary$language))) +
   theme_bw() +
   theme(text = element_text(family = font)) + 
-  geom_vline(xintercept=0, linetype="dotted") + 
   ylab("") +
   xlab("\nRelative representation in early vocabulary") 
 ```
