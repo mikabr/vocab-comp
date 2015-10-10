@@ -1,2 +1,7 @@
 *_cache/
 .DS_Store
+.Rproj.user
+.RData
+*.Rproj
+*_files/
+*_cache/
