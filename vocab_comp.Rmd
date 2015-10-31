@@ -91,23 +91,23 @@ Base plot for looking at vocabulary composition.
 ```{r base_plot}
 base_plot <- function(input_form, input_measure) {
   vocab_comp_data %>%
-    filter(form == input_form, measure == input_measure) %>%
+    filter(form == input_form, measure == input_measure, language != "Hebrew") %>%
     mutate(lexical_category = factor(lexical_category,
                                      levels = c("nouns", "predicates", "function_words"),
                                      labels = c("Nouns", "Predicates", "Function Words"))) %>%
     ggplot(aes(x = vocab, y = prop, colour = lexical_category)) +
-    facet_wrap(~language) +
+    facet_wrap(~language, ncol = 3) +
     geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                        name = "Proportion of Category\n") +
     scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                        name = "\nVocabulary Size") +
-    scale_color_solarized(name = "Lexical Category") +
+    scale_color_solarized(name = "") + # "Lexical Category") +
     theme(legend.position = c(0.068, 0.95),
-          legend.text = element_text(size = 9),
-          legend.title = element_text(size = 9, lineheight = unit(0.8, "char")),
+          #legend.text = element_text(size = 9),
+          legend.title = element_text(lineheight = unit(0.8, "char")), #size = 9),
           legend.key.height = unit(0.8, "char"),
-          legend.key.width = unit(0.3, "cm"),
+          #legend.key.width = unit(0.3, "cm"),
           legend.key = element_blank(),
           legend.background = element_rect(fill = "transparent"))
 }
@@ -144,6 +144,39 @@ Plot WG receptive vocabulary composition as a function of vocabulary size for ea
 ```{r plot_models_wg_comp, fig.width=10, fig.height=10}
 base_plot("WG", "understands") +
   geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1)
+```
+
+```{r plot_points_models_ws, fig.width = 15, fig.height = 17}
+base_plot("WS", "produces") +
+  geom_jitter(size = 0.7, alpha = 0.5) +
+  geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1, size = 1) +
+  theme_mikabr(base_size = 20) +
+  theme(legend.position = "top")
+#ggsave("BUCLD/data_models.png", width = 15, height = 17, dpi = 300)
+```
+
+```{r}
+num_admins <- vocab_comp_data %>%
+  filter(form == "WS") %>%
+  distinct(data_id) %>%
+  group_by(language) %>%
+  summarise(N = n())
+
+num_items <- items %>%
+  filter(form == "WS", lexical_category %in% c("nouns", "predicates", "function_words")) %>%
+  group_by(language, lexical_category) %>%
+  summarise(n = n()) %>%
+  spread(lexical_category, n)
+
+sample_sizes <- num_admins %>%
+  left_join(num_items) %>%
+  select(language, N, nouns, predicates, function_words) %>%
+  rename(Language = language, Nouns = nouns, Predicates = predicates, `Function Words` = function_words)
+kable(sample_sizes)
+
+#png("BUCLD/sample_sizes.png", width = 1080/72, height = 540/72, res = 300, units = "in")
+#textplot(sample_sizes, show.rownames = FALSE, mar = c(0, 0, 0, 0), cmar = 4)
+#dev.off()
 ```
 
 Function for resampling data.
@@ -221,7 +254,7 @@ ggplot(area_summary_ordered,
 ```
 
 Plot each lexical category's area estimate by language and measure for WS only.
-```{r plot_areas_ws, fig.width=10, fig.height=4}
+```{r plot_areas_ws, fig.width=15, fig.height=7.5}
 ggplot(filter(area_summary_ordered, form == "WS"),
        aes(y = language, x = mean, col = lexical_category)) +
   facet_grid(. ~ lexical_category) +
@@ -231,7 +264,9 @@ ggplot(filter(area_summary_ordered, form == "WS"),
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray") + 
   scale_colour_solarized(name = "", guide = FALSE) +
   scale_y_discrete(name = "", limits = levels(area_summary_ordered$language)) +
-  xlab("\nRelative representation in early vocabulary")
+  xlab("\nRelative representation in early vocabulary") +
+  theme_mikabr(base_size = 20)
+#ggsave("BUCLD/diffs.png", width = 1080/72, height = 540/72)
 ```
 
 Demo plots of English and Mandarin data and models.
