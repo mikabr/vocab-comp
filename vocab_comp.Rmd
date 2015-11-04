@@ -95,8 +95,10 @@ base_plot <- function(input_form, input_measure) {
     mutate(lexical_category = factor(lexical_category,
                                      levels = c("nouns", "predicates", "function_words"),
                                      labels = c("Nouns", "Predicates", "Function Words"))) %>%
+    left_join(sample_sizes) %>%
+    mutate(language_with_size = sprintf("%s (N = %s)", language, n)) %>%
     ggplot(aes(x = vocab, y = prop, colour = lexical_category)) +
-    facet_wrap(~language, ncol = 3) +
+    facet_wrap(~language_with_size, ncol = 4) +
     geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                        name = "Proportion of Category\n") +
@@ -152,7 +154,7 @@ base_plot("WS", "produces") +
   geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1, size = 1) +
   theme_mikabr(base_size = 20) +
   theme(legend.position = "top")
-#ggsave("BUCLD/data_models.png", width = 15, height = 17, dpi = 300)
+ggsave("BUCLD/data_models.png", width = 12, height = 10)
 ```
 
 ```{r}
@@ -257,7 +259,7 @@ Plot each lexical category's area estimate by language and measure for WS only.
 ```{r plot_areas_ws, fig.width=15, fig.height=7.5}
 ggplot(filter(area_summary_ordered, form == "WS"),
        aes(y = language, x = mean, col = lexical_category)) +
-  facet_grid(. ~ lexical_category) +
+  facet_grid(lexical_category ~ .) +
   geom_point() +
   geom_segment(aes(x = ci_lower, xend = ci_upper,
                    y = language, yend = language)) +
@@ -266,7 +268,7 @@ ggplot(filter(area_summary_ordered, form == "WS"),
   scale_y_discrete(name = "", limits = levels(area_summary_ordered$language)) +
   xlab("\nRelative representation in early vocabulary") +
   theme_mikabr(base_size = 20)
-#ggsave("BUCLD/diffs.png", width = 1080/72, height = 540/72)
+ggsave("BUCLD/diffs.png", width = 8, height = 11)
 ```
 
 Demo plots of English and Mandarin data and models.
