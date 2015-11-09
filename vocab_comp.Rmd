@@ -91,14 +91,14 @@ Base plot for looking at vocabulary composition.
 ```{r base_plot}
 base_plot <- function(input_form, input_measure) {
   vocab_comp_data %>%
-    filter(form == input_form, measure == input_measure, language != "Hebrew") %>%
+    filter(form == input_form, measure == input_measure) %>%
     mutate(lexical_category = factor(lexical_category,
                                      levels = c("nouns", "predicates", "function_words"),
-                                     labels = c("Nouns", "Predicates", "Function Words"))) %>%
+                                     labels = c("Nouns  ", "Predicates  ", "Function Words"))) %>%
     left_join(sample_sizes) %>%
     mutate(language_with_size = sprintf("%s (N = %s)", language, n)) %>%
     ggplot(aes(x = vocab, y = prop, colour = lexical_category)) +
-    facet_wrap(~language_with_size, ncol = 4) +
+    facet_wrap(~language_with_size, ncol = 5) +
     geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                        name = "Proportion of Category\n") +
@@ -151,10 +151,12 @@ base_plot("WG", "understands") +
 ```{r plot_points_models_ws, fig.width = 15, fig.height = 17}
 base_plot("WS", "produces") +
   geom_jitter(size = 0.7, alpha = 0.5) +
-  geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1, size = 1) +
+  geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1, size = 1, se = FALSE) +
   theme_mikabr(base_size = 20) +
-  theme(legend.position = "top")
-ggsave("BUCLD/data_models.png", width = 12, height = 10)
+  theme(legend.position = "top",
+        legend.key = element_blank(),
+        legend.background = element_rect(fill = "transparent"))
+ggsave("BUCLD/data_models.png", width = 15, height = 10)
 ```
 
 ```{r}
@@ -328,4 +330,27 @@ ggplot(demo_data,
         legend.key.height = unit(0.9, "char"),
         legend.key.width = unit(0.88, "char"),
         legend.background = element_rect(fill = "transparent"))
+```
+
+```{r}
+ggplot(filter(predictions, language == "English"), aes(x = vocab, y = prop)) +
+  facet_grid(. ~ lexical_category) +
+  geom_line(aes(colour = lexical_category), size = 1) +
+  geom_polygon(data = filter(area_poly, language == "English"),
+               aes(fill = lexical_category), alpha = 0.2) +
+  geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
+  scale_y_continuous(limits = c(0, 1), breaks = c(),
+                     name = "") +
+  scale_x_continuous(limits = c(0, 1), breaks = c(),
+                     name = "") +
+  scale_color_solarized(guide = FALSE) +
+  scale_fill_solarized(guide = FALSE) +
+  theme(legend.position = c(0.061, 0.91),
+        legend.text = element_text(size = 8),
+        legend.key.height = unit(0.9, "char"),
+        legend.key.width = unit(0.88, "char"),
+        legend.background = element_rect(fill = "transparent"),
+        strip.background = element_blank(),
+        strip.text.x = element_blank())
+ggsave("BUCLD/area_demo.png", width = 9, height = 3.5)
 ```
