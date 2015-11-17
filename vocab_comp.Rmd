@@ -32,7 +32,7 @@ items <- get_item_data() %>%
   mutate(num_item_id = as.numeric(substr(item_id, 6, nchar(item_id))))
 ```
 
-Get vocabulary composition data for all languages.
+Function for getting vocabulary composition data for a given instrument.
 ```{r vocab_comp_fun}
 get_vocab_comp <- function(input_language, input_form) {
   
@@ -57,16 +57,19 @@ get_vocab_comp <- function(input_language, input_form) {
               prop = sum(value) / n())
   
   lang_vocab_sizes <- lang_vocab_summary %>%
-    summarise(vocab = sum(num_true) / num_words)
+    summarise(vocab_num = sum(num_true),
+              vocab = sum(num_true) / num_words)
   
   lang_vocab_summary %>%
     left_join(lang_vocab_sizes) %>%
+    mutate(prop_vocab = num_true / vocab_num) %>%
     select(-num_true) %>%
     mutate(language = input_language, form = input_form)
   
 }
 ```
 
+Get vocabulary composition data for all instruments.
 ```{r vocab_comp}
 instruments <- items %>%
   select(language, form) %>%
@@ -95,95 +98,54 @@ base_plot <- function(input_form, input_measure) {
     mutate(lexical_category = factor(lexical_category,
                                      levels = c("nouns", "predicates", "function_words"),
                                      labels = c("Nouns  ", "Predicates  ", "Function Words"))) %>%
-    left_join(sample_sizes) %>%
-    mutate(language_with_size = sprintf("%s (N = %s)", language, n)) %>%
     ggplot(aes(x = vocab, y = prop, colour = lexical_category)) +
-    facet_wrap(~language_with_size, ncol = 5) +
+    facet_wrap(~language) +
     geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                        name = "Proportion of Category\n") +
     scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
                        name = "\nVocabulary Size") +
-    scale_color_solarized(name = "") + # "Lexical Category") +
-    theme(legend.position = c(0.068, 0.95),
-          #legend.text = element_text(size = 9),
-          legend.title = element_text(lineheight = unit(0.8, "char")), #size = 9),
-          legend.key.height = unit(0.8, "char"),
-          #legend.key.width = unit(0.3, "cm"),
+    scale_colour_solarized(name = "") +
+    theme(legend.position = "top",
           legend.key = element_blank(),
           legend.background = element_rect(fill = "transparent"))
 }
 ```
 
 Plot WS productive vocabulary composition as a function of vocabulary size for each language.
-```{r plot_points_ws, fig.width=10, fig.height=10}
+```{r plot_points_ws, fig.width=10, fig.height=10, cache=FALSE}
 base_plot("WS", "produces") + geom_jitter(size = 0.7)
 ```
 
 Plot WG productive vocabulary composition as a function of vocabulary size for each language.
-```{r plot_points_wg_prod, fig.width=10, fig.height=10}
+```{r plot_points_wg_prod, fig.width=10, fig.height=10, cache=FALSE}
 base_plot("WG", "produces") + geom_jitter(size = 0.7)
 ```
 
 Plot WG receptive vocabulary composition as a function of vocabulary size for each language.
-```{r plot_points_wg_comp, fig.width=10, fig.height=10}
+```{r plot_points_wg_comp, fig.width=10, fig.height=10, cache=FALSE}
 base_plot("WG", "understands") + geom_jitter(size = 0.7)
 ```
 
 Plot WS productive vocabulary composition as a function of vocabulary size for each language with cubic contrained lm curves.
-```{r plot_models_ws, fig.width=10, fig.height=10}
+```{r plot_models_ws, fig.width=10, fig.height=10, cache=FALSE}
 base_plot("WS", "produces") +
   geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1)
 ```
 
 Plot WG productive vocabulary composition as a function of vocabulary size for each language with cubic contrained lm curves.
-```{r plot_models_wg_prod, fig.width=10, fig.height=10}
+```{r plot_models_wg_prod, fig.width=10, fig.height=10, cache=FALSE}
 base_plot("WG", "produces") +
   geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1)
 ```
 
 Plot WG receptive vocabulary composition as a function of vocabulary size for each language with cubic contrained lm curves.
-```{r plot_models_wg_comp, fig.width=10, fig.height=10}
+```{r plot_models_wg_comp, fig.width=10, fig.height=10, cache=FALSE}
 base_plot("WG", "understands") +
   geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1)
 ```
 
-```{r plot_points_models_ws, fig.width = 15, fig.height = 17}
-base_plot("WS", "produces") +
-  geom_jitter(size = 0.7, alpha = 0.5) +
-  geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1, size = 1, se = FALSE) +
-  theme_mikabr(base_size = 20) +
-  theme(legend.position = "top",
-        legend.key = element_blank(),
-        legend.background = element_rect(fill = "transparent"))
-ggsave("BUCLD/data_models.png", width = 15, height = 10)
-```
-
-```{r}
-num_admins <- vocab_comp_data %>%
-  filter(form == "WS") %>%
-  distinct(data_id) %>%
-  group_by(language) %>%
-  summarise(N = n())
-
-num_items <- items %>%
-  filter(form == "WS", lexical_category %in% c("nouns", "predicates", "function_words")) %>%
-  group_by(language, lexical_category) %>%
-  summarise(n = n()) %>%
-  spread(lexical_category, n)
-
-sample_sizes <- num_admins %>%
-  left_join(num_items) %>%
-  select(language, N, nouns, predicates, function_words) %>%
-  rename(Language = language, Nouns = nouns, Predicates = predicates, `Function Words` = function_words)
-kable(sample_sizes)
-
-#png("BUCLD/sample_sizes.png", width = 1080/72, height = 540/72, res = 300, units = "in")
-#textplot(sample_sizes, show.rownames = FALSE, mar = c(0, 0, 0, 0), cmar = 4)
-#dev.off()
-```
-
-Function for resampling data.
+Function for resampling data and computing area estimate for each sample.
 ```{r resample}
 sample_areas <- function(d, nboot = 1000) {
   
@@ -214,7 +176,7 @@ sample_areas <- function(d, nboot = 1000) {
 }
 ```
 
-Resample data, compute area for each sample, find the mean and CI of the area estimate.
+Resample data and find the mean and CI of the area estimate.
 ```{r areas}
 areas <- sample_areas(vocab_comp_data, 1000)
 
@@ -257,24 +219,51 @@ ggplot(area_summary_ordered,
   xlab("\nRelative representation in early vocabulary")
 ```
 
-Plot each lexical category's area estimate by language and measure for WS only.
-```{r plot_areas_ws, fig.width=15, fig.height=7.5}
-ggplot(filter(area_summary_ordered, form == "WS"),
-       aes(y = language, x = mean, col = lexical_category)) +
-  facet_grid(lexical_category ~ .) +
-  geom_point() +
-  geom_segment(aes(x = ci_lower, xend = ci_upper,
-                   y = language, yend = language)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") + 
-  scale_colour_solarized(name = "", guide = FALSE) +
-  scale_y_discrete(name = "", limits = levels(area_summary_ordered$language)) +
-  xlab("\nRelative representation in early vocabulary") +
-  theme_mikabr(base_size = 20)
-ggsave("BUCLD/diffs.png", width = 8, height = 11)
+
+Plots for BUCLD poster
+----------------------
+
+Data and models.
+```{r plot_points_models_ws, fig.width = 15, fig.height = 10}
+sample_sizes_ordered <- sample_sizes %>%
+  filter(form == "WS") %>%
+  mutate(language = factor(language, levels = rev(language_levels)))
+
+language_size_order <- unlist(map(
+  levels(sample_sizes_ordered$language),
+  function(language) sprintf("%s (N = %s)", language,
+                             sample_sizes_ordered$n[which(sample_sizes_ordered$language == language)])
+))
+
+vocab_comp_data_ordered <- vocab_comp_data %>%
+  filter(form == "WS", measure == "produces") %>%
+  mutate(language = factor(language, levels = rev(language_levels)),
+         lexical_category = factor(lexical_category,
+                                   levels = c("nouns", "predicates", "function_words"),
+                                   labels = c("Nouns  ", "Predicates  ", "Function Words"))) %>%
+  left_join(sample_sizes_ordered) %>%
+  mutate(language_with_size = sprintf("%s (N = %s)", language, n),
+         language_with_size = factor(language_with_size, levels = language_size_order))
+
+ggplot(vocab_comp_data_ordered, aes(x = vocab, y = prop, colour = lexical_category)) +
+  facet_wrap(~language_with_size, ncol = 5) +
+  geom_jitter(size = 0.7, alpha = 0.5) +
+  geom_smooth(method = "clm", formula = y ~ I(x ^ 3) + I(x ^ 2) + x - 1, size = 1, se = FALSE) +
+  geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
+                     name = "Proportion of Category\n") +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
+                     name = "\nVocabulary Size") +
+  scale_colour_solarized(name = "") +
+  theme_mikabr(base_size = 20) +
+  theme(legend.position = "top",
+        legend.key = element_blank(),
+        legend.background = element_rect(fill = "transparent"))
+#ggsave("BUCLD/data_models.png", width = 15, height = 10)
 ```
 
-Demo plots of English and Mandarin data and models.
-```{r demo}
+Demo of area estimation.
+```{r plot_area_demo, fig.width = 9, fig.height = 3.5}
 demo_langs <- c("English", "Mandarin")
 demo_data <- filter(vocab_comp_data, form == "WS", language %in% demo_langs) %>%
   mutate(panel = paste(language, "(data)"),
@@ -310,29 +299,7 @@ diagonal$prop <- diagonal$vocab
 
 area_poly <- bind_rows(predictions, diagonal) %>%
   mutate(panel = paste(language, "(models)"))
-```
 
-```{r demo_plot, fig.width=10, fig.height=3}
-ggplot(demo_data,
-       aes(x = vocab, y = prop, colour = lexical_category, fill = lexical_category)) +
-  facet_grid(~ panel) +
-  geom_point(size = 0.7) +
-  geom_polygon(data = area_poly, alpha = 0.2) +
-  geom_abline(slope = 1, intercept = 0, color = "gray", linetype = "dashed") + 
-  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
-                     name = "Proportion of Category\n") +
-  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2),
-                     name = "\nVocabulary Size") +
-  scale_color_solarized(guide = FALSE) +
-  scale_fill_solarized(name = "") +
-  theme(legend.position = c(0.061, 0.91),
-        legend.text = element_text(size = 8),
-        legend.key.height = unit(0.9, "char"),
-        legend.key.width = unit(0.88, "char"),
-        legend.background = element_rect(fill = "transparent"))
-```
-
-```{r}
 ggplot(filter(predictions, language == "English"), aes(x = vocab, y = prop)) +
   facet_grid(. ~ lexical_category) +
   geom_line(aes(colour = lexical_category), size = 1) +
@@ -343,7 +310,7 @@ ggplot(filter(predictions, language == "English"), aes(x = vocab, y = prop)) +
                      name = "") +
   scale_x_continuous(limits = c(0, 1), breaks = c(),
                      name = "") +
-  scale_color_solarized(guide = FALSE) +
+  scale_colour_solarized(guide = FALSE) +
   scale_fill_solarized(guide = FALSE) +
   theme(legend.position = c(0.061, 0.91),
         legend.text = element_text(size = 8),
@@ -352,5 +319,21 @@ ggplot(filter(predictions, language == "English"), aes(x = vocab, y = prop)) +
         legend.background = element_rect(fill = "transparent"),
         strip.background = element_blank(),
         strip.text.x = element_blank())
-ggsave("BUCLD/area_demo.png", width = 9, height = 3.5)
+#ggsave("BUCLD/area_demo.png", width = 9, height = 3.5)
+```
+
+WS area estimates.
+```{r plot_areas_ws, fig.width = 8, fig.height = 11}
+ggplot(filter(area_summary_ordered, form == "WS"),
+       aes(y = language, x = mean, col = lexical_category)) +
+  facet_grid(lexical_category ~ .) +
+  geom_point() +
+  geom_segment(aes(x = ci_lower, xend = ci_upper,
+                   y = language, yend = language)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") + 
+  scale_colour_solarized(name = "", guide = FALSE) +
+  scale_y_discrete(name = "", limits = levels(area_summary_ordered$language)) +
+  xlab("\nRelative representation in early vocabulary") +
+  theme_mikabr(base_size = 20)
+#ggsave("BUCLD/diffs.png", width = 8, height = 11)
 ```
